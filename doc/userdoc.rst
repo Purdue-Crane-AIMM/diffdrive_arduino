@@ -58,9 +58,7 @@ Tutorial steps
           left_wheel_joint/velocity [available] [claimed]
           right_wheel_joint/velocity [available] [claimed]
     state interfaces
-          left_wheel_joint/position
           left_wheel_joint/velocity
-          right_wheel_joint/position
           right_wheel_joint/velocity
 
    The ``[claimed]`` marker on command interfaces means that a controller has access to command *DiffBot*.
