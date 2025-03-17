@@ -2,8 +2,7 @@
 #include <controller_manager/controller_manager.h>
 #include "diffdrive_arduino/diffdrive_arduino.h"
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   ros::init(argc, argv, "diffdrive_robot");
   ros::NodeHandle n("~");
 
@@ -14,7 +13,6 @@ int main(int argc, char **argv)
   n.getParam("right_wheel_name", robot_cfg.right_wheel_name);
   n.getParam("baud_rate", robot_cfg.baud_rate);
   n.getParam("device", robot_cfg.device);
-  n.getParam("enc_counts_per_rev", robot_cfg.enc_counts_per_rev);
   n.getParam("robot_loop_rate", robot_cfg.loop_rate);
   
 
@@ -28,9 +26,7 @@ int main(int argc, char **argv)
 
   ros::Rate loop_rate(10);
 
-  while (ros::ok())
-  {
-    robot.read();
+  while (ros::ok()) {
     cm.update(robot.get_time(), robot.get_period());
     robot.write();
 

@@ -23,13 +23,8 @@ return_type FakeRobot::configure(const hardware_interface::HardwareInfo & info)
   cfg_.left_wheel_name = info_.hardware_parameters["left_wheel_name"];
   cfg_.right_wheel_name = info_.hardware_parameters["right_wheel_name"];
 
-
-  // Set up the wheels
-  // Note: It doesn't matter that we haven't set encoder counts per rev
-  // since the fake robot bypasses the encoder code completely
-
-  l_wheel_.setup(cfg_.left_wheel_name, cfg_.enc_counts_per_rev);
-  r_wheel_.setup(cfg_.right_wheel_name, cfg_.enc_counts_per_rev);
+  l_wheel_.setup(cfg_.left_wheel_name);
+  r_wheel_.setup(cfg_.right_wheel_name);
 
   RCLCPP_INFO(logger_, "Finished Configuration");
 
@@ -39,14 +34,12 @@ return_type FakeRobot::configure(const hardware_interface::HardwareInfo & info)
 
 std::vector<hardware_interface::StateInterface> FakeRobot::export_state_interfaces()
 {
-  // We need to set up a position and a velocity interface for each wheel
+  // We need to set up a velocity interface for each wheel
 
   std::vector<hardware_interface::StateInterface> state_interfaces;
 
   state_interfaces.emplace_back(hardware_interface::StateInterface(l_wheel_.name, hardware_interface::HW_IF_VELOCITY, &l_wheel_.vel));
-  state_interfaces.emplace_back(hardware_interface::StateInterface(l_wheel_.name, hardware_interface::HW_IF_POSITION, &l_wheel_.pos));
   state_interfaces.emplace_back(hardware_interface::StateInterface(r_wheel_.name, hardware_interface::HW_IF_VELOCITY, &r_wheel_.vel));
-  state_interfaces.emplace_back(hardware_interface::StateInterface(r_wheel_.name, hardware_interface::HW_IF_POSITION, &r_wheel_.pos));
 
   return state_interfaces;
 }
@@ -82,20 +75,6 @@ return_type FakeRobot::stop()
 
 hardware_interface::return_type FakeRobot::read()
 {
-
-  // TODO fix chrono duration
-
-  // Calculate time delta
-  auto new_time = std::chrono::system_clock::now();
-  std::chrono::duration<double> diff = new_time - time_;
-  double deltaSeconds = diff.count();
-  time_ = new_time;
-
-
-  // Force the wheel position
-  l_wheel_.pos = l_wheel_.pos + l_wheel_.vel * deltaSeconds;
-  r_wheel_.pos = r_wheel_.pos + r_wheel_.vel * deltaSeconds;
-
   return return_type::OK;
 
   

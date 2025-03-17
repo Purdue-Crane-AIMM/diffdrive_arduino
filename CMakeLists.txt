@@ -12,7 +12,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(serial REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(controller_manager REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -34,7 +33,6 @@ ament_target_dependencies(
   diffdrive_arduino
   hardware_interface
   controller_manager
-  serial
   rclcpp
   pluginlib
 )
