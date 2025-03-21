@@ -4,23 +4,23 @@
 #include <string>
 
 
-
-class Wheel
-{
+class Wheel {
     public:
 
     std::string name = "";
     double cmd = 0;
-    double pos = 0;
     double vel = 0;
-    double eff = 0;
-    double velSetPt = 0;
+    double pos = 0;
+    int min_range = 1000;
+    int max_range = 2000;
 
     Wheel() = default;
 
     Wheel(const std::string &wheel_name);
     
     void setup(const std::string &wheel_name);
+
+    double getMotorCommand();
 };
 
 

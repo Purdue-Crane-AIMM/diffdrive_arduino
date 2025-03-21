@@ -35,13 +35,14 @@ return_type DiffDriveArduino::configure(const hardware_interface::HardwareInfo &
 }
 
 std::vector<hardware_interface::StateInterface> DiffDriveArduino::export_state_interfaces() {
-  // We need to set up a position and a velocity interface for each wheel
+  // We need to set up a velocity interface for each wheel
 
   std::vector<hardware_interface::StateInterface> state_interfaces;
 
   state_interfaces.emplace_back(hardware_interface::StateInterface(l_wheel_.name, hardware_interface::HW_IF_VELOCITY, &l_wheel_.vel));
+  state_interfaces.emplace_back(hardware_interface::StateInterface(l_wheel_.name, hardware_interface::HW_IF_POSITION, &l_wheel_.pos));
   state_interfaces.emplace_back(hardware_interface::StateInterface(r_wheel_.name, hardware_interface::HW_IF_VELOCITY, &r_wheel_.vel));
-
+  state_interfaces.emplace_back(hardware_interface::StateInterface(r_wheel_.name, hardware_interface::HW_IF_POSITION, &r_wheel_.pos));
   return state_interfaces;
 }
 
@@ -85,12 +86,14 @@ hardware_interface::return_type DiffDriveArduino::write() {
   {
     return return_type::ERROR;
   }
-
-  arduino_.setMotorValues(l_wheel_.cmd, r_wheel_.cmd);
+  
+  arduino_.setMotorValues(l_wheel_.getMotorCommand(), r_wheel_.getMotorCommand());
 
   return return_type::OK;
   
 }
+
+
 
 #include "pluginlib/class_list_macros.hpp"
 
