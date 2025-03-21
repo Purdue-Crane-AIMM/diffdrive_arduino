@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
+cmake_policy(SET CMP0148 OLD)
 project(diffdrive_arduino)
 
 # Default to C++14
@@ -17,57 +18,32 @@ find_package(controller_manager REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(pluginlib REQUIRED)
 
-
-
-
-
-
-add_library(diffdrive_arduino SHARED src/diffdrive_arduino.cpp src/wheel.cpp src/arduino_comms.cpp)
-
-target_include_directories(
-  diffdrive_arduino
-  PRIVATE
-  include
+add_library(
+  diffdrive_arduino 
+  SHARED 
+  src/diffdrive_arduino.cpp 
+  src/wheel.cpp 
+  src/arduino_comms.cpp
 )
+
+target_compile_features(diffdrive_arduino PUBLIC cxx_std_17)
+target_include_directories(diffdrive_arduino PUBLIC
+$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+$<INSTALL_INTERFACE:include/diffdrive_arduino>
+)
+
 ament_target_dependencies(
-  diffdrive_arduino
+  diffdrive_arduino PUBLIC
   hardware_interface
   controller_manager
   rclcpp
   pluginlib
 )
+
+target_link_libraries(diffdrive_arduino PUBLIC serial)
+target_compile_definitions(${PROJECT_NAME} PRIVATE "DIFFDRIVE_ARDUINO_BUILDING_DLL")
 
 pluginlib_export_plugin_description_file(hardware_interface robot_hardware.xml)
-
-
-
-add_library(fake_robot SHARED src/fake_robot.cpp src/wheel.cpp)
-set_property(TARGET fake_robot PROPERTY POSITION_INDEPENDENT_CODE ON)
-
-target_include_directories(
-  fake_robot
-  PRIVATE
-  include
-)
-ament_target_dependencies(
-  fake_robot
-  hardware_interface
-  controller_manager
-  rclcpp
-  pluginlib
-)
-
-pluginlib_export_plugin_description_file(hardware_interface fake_robot_hardware.xml)
-
-
-
-
-install(
-  TARGETS diffdrive_arduino fake_robot
-  DESTINATION lib
-)
-
-
 
 
 install(
@@ -75,15 +51,16 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
-
-ament_export_libraries(
-  diffdrive_arduino
-  fake_robot
+install(TARGETS diffdrive_arduino
+  EXPORT export_diffdrive_arduino
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
+ament_export_targets(export_diffdrive_arduino HAS_LIBRARY_TARGET)
 ament_export_dependencies(
   hardware_interface
   controller_manager
-  serial
   rclcpp
   pluginlib
 )
