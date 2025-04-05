@@ -21,7 +21,10 @@ public:
   void setup(const std::string &serial_device, int32_t baud_rate, int32_t timeout_ms);
   void sendEmptyMsg();
   void setMotorValues(int val_1, int val_2);
-
+  /*
+  void setGripperState(double position);
+  void setActuatorState(double position);
+*/
   bool connected() const { return serial_conn_.IsOpen(); }
 
   void disconnect();

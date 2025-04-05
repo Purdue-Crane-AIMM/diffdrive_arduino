@@ -46,7 +46,34 @@ void ArduinoComms::setMotorValues(int val_1, int val_2) {
     std::stringstream ss;
     ss << "m " << val_1 << " " << val_2 << "\r";
     sendMsg(ss.str());
+    std::cout << "m " << val_1 << " " << val_2 << std::endl;
 }
+
+/*
+void ArduinoComms::setGripperState(double position) {
+    if (position > 0.1) {   // CLose gripper
+      std::stringstream ss;
+      ss << "f 1";
+      sendMsg(ss.str());
+    } else {
+      std::stringstream ss;
+      ss << "f 0";
+      sendMsg(ss.str());
+    }
+}
+
+void ArduinoComms::setActuatorState(double position) {
+    if (position > 0.1) {
+      std::stringstream ss;
+      ss << "g 1";
+      sendMsg(ss.str());
+    } else {
+      std::stringstream ss;
+      ss << "g 0";
+      sendMsg(ss.str());
+    }
+}
+    */
 
 std::string ArduinoComms::sendMsg(const std::string &msg_to_send, bool print_output) {
     serial_conn_.FlushIOBuffers(); // Just in case

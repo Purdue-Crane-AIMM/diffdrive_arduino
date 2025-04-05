@@ -48,6 +48,8 @@ private:
 
   Wheel l_wheel_;
   Wheel r_wheel_;
+  double gripper_position_;
+  double actuator_position_;
 
   rclcpp::Logger logger_;
 
