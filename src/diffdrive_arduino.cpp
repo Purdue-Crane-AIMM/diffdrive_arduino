@@ -53,10 +53,8 @@ std::vector<hardware_interface::CommandInterface> DiffDriveArduino::export_comma
 
   command_interfaces.emplace_back(hardware_interface::CommandInterface(l_wheel_.name, hardware_interface::HW_IF_VELOCITY, &l_wheel_.cmd));
   command_interfaces.emplace_back(hardware_interface::CommandInterface(r_wheel_.name, hardware_interface::HW_IF_VELOCITY, &r_wheel_.cmd));
-  /*
   command_interfaces.emplace_back(hardware_interface::CommandInterface("gripper", "gripper", &gripper_position_));
-  command_interfaces.emplace_back(hardware_interface::CommandInterface("actuator", "actuator", &actuator_position_));
-*/
+  // command_interfaces.emplace_back(hardware_interface::CommandInterface("actuator", "actuator", &actuator_position_));
   return command_interfaces;
 }
 

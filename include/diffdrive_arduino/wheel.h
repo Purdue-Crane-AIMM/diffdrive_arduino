@@ -11,8 +11,8 @@ class Wheel {
     double cmd = 0;
     double vel = 0;
     double pos = 0;
-    int min_range = 1000;
-    int max_range = 2000;
+    int min_range = 1050;
+    int max_range = 1950;
 
     Wheel() = default;
 
