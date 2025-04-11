@@ -17,6 +17,8 @@ find_package(hardware_interface REQUIRED)
 find_package(controller_manager REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(pluginlib REQUIRED)
+find_package(nav_msgs REQUIRED) # Add this line
+find_package(sensor_msgs REQUIRED) # Add this line
 
 add_library(
   diffdrive_arduino 
@@ -38,6 +40,8 @@ ament_target_dependencies(
   controller_manager
   rclcpp
   pluginlib
+  nav_msgs # Add this dependency
+  sensor_msgs # Add this dependency
 )
 
 target_link_libraries(diffdrive_arduino PUBLIC serial)
@@ -47,7 +51,7 @@ pluginlib_export_plugin_description_file(hardware_interface robot_hardware.xml)
 
 
 install(
-  DIRECTORY controllers launch/
+  DIRECTORY controllers 
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -63,6 +67,8 @@ ament_export_dependencies(
   controller_manager
   rclcpp
   pluginlib
+  nav_msgs
+  sensor_msgs
 )
 
 ament_package()

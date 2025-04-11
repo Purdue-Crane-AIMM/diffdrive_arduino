@@ -11,7 +11,8 @@ struct Config
   float loop_rate = 30;
   std::string device = "/dev/ttyACM0";
   int baud_rate = 57600;
-  int timeout = 1000;
+  int timeout = 50;
+  float wheel_separation = 1.524;
 };
 
 

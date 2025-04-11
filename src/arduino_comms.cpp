@@ -42,23 +42,23 @@ void ArduinoComms::sendEmptyMsg() {
     std::string response = sendMsg("\r");
 }
 
-void ArduinoComms::setMotorValues(int val_1, int val_2) {
+void ArduinoComms::setMotorValues(long pwm_left, long pwm_right) {
     std::stringstream ss;
-    ss << "m " << val_1 << " " << val_2 << "\r";
+    ss << "m " << pwm_left << " " << pwm_right << "\r";
     sendMsg(ss.str());
-    std::cout << "m " << val_1 << " " << val_2 << std::endl;
+    std::cout << "m " << pwm_left << " " << pwm_right << std::endl;
+    RCLCPP_INFO(rclcpp::get_logger("ArduinoComms"), "Sending motor command: %s", ss.str().c_str());
 }
 
 void ArduinoComms::setGripperState(double position) {
-    if (position > 0.1) {   // CLose gripper
-      std::stringstream ss;
+    std::stringstream ss;
+    if (position > 0.1) {   // Close gripper
       ss << "f 1";
-      sendMsg(ss.str());
     } else {
-      std::stringstream ss;
       ss << "f 0";
-      sendMsg(ss.str());
     }
+    // RCLCPP_INFO(rclcpp::get_logger("ArduinoComms"), "Sending gripper command: %s", ss.str().c_str());
+    sendMsg(ss.str());
 }
 
 // void ArduinoComms::setActuatorState(double position) {
