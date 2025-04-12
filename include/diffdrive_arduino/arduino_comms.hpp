@@ -19,7 +19,7 @@ public:
   void sendEmptyMsg();
   void setMotorValues(long pwm_left, long pwm_right);
   
-  void setGripperState(double position);
+  void setGripperState(int8_t position);
   // void setActuatorState(double position);
 
   bool connected() const { return serial_conn_.IsOpen(); }

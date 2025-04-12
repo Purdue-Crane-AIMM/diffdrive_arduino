@@ -1,214 +1,204 @@
-#include "diffdrive_arduino/diffdrive_arduino.h"
-#include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+#include "std_msgs/msg/int8.hpp"
 #include "nav_msgs/msg/odometry.hpp"
-#include "sensor_msgs/msg/imu.hpp"
-#include <mutex>
-#include <algorithm>
+#include "diffdrive_arduino/wheel.hpp"
+#include "diffdrive_arduino/arduino_comms.hpp"
+#include <experimental/filesystem>  // Use experimental filesystem for C++14
+#include <regex>
 
-DiffDriveArduino::DiffDriveArduino()
-    : logger_(rclcpp::get_logger("DiffDriveArduino")),
-      pid_left_(0.5, 0.1, 0.05),  // Guessed PID gains for left motor
-      pid_right_(0.5, 0.1, 0.05) // Guessed PID gains for right motor
-{}
+namespace fs = std::experimental::filesystem;
 
-void DiffDriveArduino::configureOdometryCallback() {
-  rclcpp::QoS qos_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_default));
-  qos_profile.reliability(RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT);
-  // Use the persistent node instead of a temporary node
-  odom_sub_ = subscription_node_->create_subscription<nav_msgs::msg::Odometry>(
-      "/lio_sam/mapping/odometry", qos_profile,
-      [this](const nav_msgs::msg::Odometry::SharedPtr msg) {
-        std::lock_guard<std::mutex> lock(odom_mutex_);
-        odom_data_ = *msg;
+std::string find_arduino_device()
+{
+    std::string device_path = "/dev/ttyUSB0";  // fallback
+    std::string dir = "/dev/serial/by-id/";
+    std::regex arduino_regex("arduino", std::regex::icase);
 
-        // Calculate left and right wheel velocities from odometry
-        odom_l_wheel_vel_ = odom_data_.twist.twist.linear.x - odom_data_.twist.twist.angular.z * cfg_.wheel_separation / 2.0;
-        odom_r_wheel_vel_ = odom_data_.twist.twist.linear.x + odom_data_.twist.twist.angular.z * cfg_.wheel_separation / 2.0;
-      });
+    for (const auto &entry : fs::directory_iterator(dir))
+    {
+        std::string path = entry.path();
+        if (std::regex_search(path, arduino_regex))
+        {
+            device_path = path;
+            break;
+        }
+    }
+    return device_path;
 }
 
-void DiffDriveArduino::configureImuCallback() {
-  rclcpp::QoS qos_profile(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_default));
-  qos_profile.reliability(RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT);
+namespace diffdrive_arduino
+{
 
-  // Use the persistent node for the subscription
-  imu_sub_ = subscription_node_->create_subscription<sensor_msgs::msg::Imu>(
-      "/zed/zed_node/imu/data", qos_profile,
-      [this](const sensor_msgs::msg::Imu::SharedPtr msg) {
-        std::lock_guard<std::mutex> lock(imu_mutex_);
-        imu_data_ = *msg;
+class DiffDriveArduinoNode : public rclcpp::Node
+{
+public:
+    DiffDriveArduinoNode() : Node("diffdrive_arduino_node"),
+                             left_wheel_("left"),
+                             right_wheel_("right"),
+                             comms_(find_arduino_device(), 57600, 90),
+                             target_linear_(0.0),
+                             target_angular_(0.0),
+                             have_odom_(false),
+                             wheel_base_(1.5)  // default wheel separation in meters
+    {
+        declare_parameter("turn_gain", 0.5);
+        declare_parameter("use_pid", true);
+        declare_parameter("left_wheel.kp", 1.0);
+        declare_parameter("left_wheel.ki", 0.0);
+        declare_parameter("left_wheel.kd", 0.0);
+        declare_parameter("right_wheel.kp", 1.0);
+        declare_parameter("right_wheel.ki", 0.0);
+        declare_parameter("right_wheel.kd", 0.0);
+        declare_parameter("wheel_base", wheel_base_);
 
-        // Use IMU angular velocity for high-frequency updates
-        angular_velocity_ = imu_data_.angular_velocity.z;
+        get_parameter("use_pid", use_pid_);
+        get_parameter("wheel_base", wheel_base_);
 
-        // Adjust wheel velocities based on angular velocity
-        imu_l_wheel_vel_ = -angular_velocity_ * cfg_.wheel_separation / 2.0;
-        imu_r_wheel_vel_ = angular_velocity_ * cfg_.wheel_separation / 2.0;
-      });
+        double l_kp, l_ki, l_kd, r_kp, r_ki, r_kd;
+        get_parameter("left_wheel.kp", l_kp);
+        get_parameter("left_wheel.ki", l_ki);
+        get_parameter("left_wheel.kd", l_kd);
+        get_parameter("right_wheel.kp", r_kp);
+        get_parameter("right_wheel.ki", r_ki);
+        get_parameter("right_wheel.kd", r_kd);
+
+        left_wheel_.set_pid_gains(l_kp, l_ki, l_kd);
+        right_wheel_.set_pid_gains(r_kp, r_ki, r_kd);
+
+        // Subscribe to velocity command topic.
+        cmd_vel_sub_ = create_subscription<geometry_msgs::msg::Twist>(
+            "/cmd/vel", 10, std::bind(&DiffDriveArduinoNode::cmdVelCallback, this, std::placeholders::_1));
+
+        // Subscribe to gripper commands.
+        gripper_sub_ = create_subscription<std_msgs::msg::Int8>(
+            "/gripper/command", 10, std::bind(&DiffDriveArduinoNode::gripperCallback, this, std::placeholders::_1));
+
+        // If using PID, subscribe to an odometry topic for real state feedback.
+        if (use_pid_)
+        {
+            odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+                "/odom", 10, std::bind(&DiffDriveArduinoNode::odomCallback, this, std::placeholders::_1));
+        }
+
+        control_timer_ = create_wall_timer(std::chrono::milliseconds(100),
+                                             std::bind(&DiffDriveArduinoNode::controlLoop, this));
+    }
+
+private:
+    void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+    {
+        // Update target velocities from the command topic.
+        target_linear_ = msg->linear.x;
+        target_angular_ = msg->angular.z;
+    }
+
+    void gripperCallback(const std_msgs::msg::Int8::SharedPtr msg)
+    {
+        comms_.setGripperState(msg->data);
+    }
+
+    void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
+    {
+        // Save the latest odometry information.
+        current_odom_ = *msg;
+        have_odom_ = true;
+    }
+
+    int velocityToMotorCommand(double velocity)
+    {
+        const double max_velocity = 1.0;
+        const double min_velocity = 0.01;
+
+        if (velocity > max_velocity)
+        {
+            velocity = max_velocity;
+        }
+        else if (velocity < -max_velocity)
+        {
+            velocity = -max_velocity;
+        }
+
+        int motor_cmd = 1500; // neutral command.
+        if (velocity > min_velocity)
+        {
+            double scale = (2000 - 1650) / max_velocity;
+            motor_cmd = static_cast<int>(1650 + velocity * scale);
+        }
+        else if (velocity < -min_velocity)
+        {
+            double scale = (1350 - 1000) / max_velocity;
+            motor_cmd = static_cast<int>(1350 + velocity * scale);
+        }
+        return motor_cmd;
+    }
+
+    void controlLoop()
+    {
+        // Compute target wheel velocities using differential drive kinematics.
+        const double v_left = target_linear_ - wheel_base_ * target_angular_;
+        const double v_right = target_linear_ + wheel_base_ * target_angular_;
+        int left_cmd, right_cmd;
+
+        if (use_pid_)
+        {
+            double left_measured = 0.0;
+            double right_measured = 0.0;
+            if (have_odom_)
+            {
+                // Estimate individual wheel speeds from the overall odometry.
+                // For a differential drive robot:
+                //   left_speed  = v - (wheel_base/2)*omega
+                //   right_speed = v + (wheel_base/2)*omega
+                left_measured = current_odom_.twist.twist.linear.x - (wheel_base_ / 2.0) * current_odom_.twist.twist.angular.z;
+                right_measured = current_odom_.twist.twist.linear.x + (wheel_base_ / 2.0) * current_odom_.twist.twist.angular.z;
+            }
+            // Update PID controllers with target and measured speeds.
+            double left_output = left_wheel_.update(v_left, left_measured);
+            double right_output = right_wheel_.update(v_right, right_measured);
+            left_cmd = velocityToMotorCommand(left_output);
+            right_cmd = velocityToMotorCommand(right_output);
+        }
+        else
+        {
+            // Open-loop control without PID.
+            left_cmd = velocityToMotorCommand(v_left);
+            right_cmd = velocityToMotorCommand(v_right);
+        }
+
+        comms_.setMotorValues(left_cmd, right_cmd);
+    }
+
+    // Subscribers.
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+    rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr gripper_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+
+    // Timer for control loop.
+    rclcpp::TimerBase::SharedPtr control_timer_;
+
+    // Communication and wheel objects.
+    ArduinoComms comms_;
+    Wheel left_wheel_;
+    Wheel right_wheel_;
+
+    // Parameters and control state.
+    double wheel_base_;
+    bool use_pid_;
+    double target_linear_;
+    double target_angular_;
+
+    // Odometry feedback.
+    nav_msgs::msg::Odometry current_odom_;
+    bool have_odom_;
+};
+
+}  // namespace diffdrive_arduino
+
+int main(int argc, char *argv[])
+{
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<diffdrive_arduino::DiffDriveArduinoNode>());
+    rclcpp::shutdown();
+    return 0;
 }
-
-return_type DiffDriveArduino::configure(const hardware_interface::HardwareInfo & info) {
-  if (configure_default(info) != return_type::OK) {
-    return return_type::ERROR;
-  }
-
-  RCLCPP_INFO(logger_, "Configuring...");
-
-  time_ = std::chrono::system_clock::now();
-
-//   cfg_.left_wheel_name = info_.hardware_parameters["left_wheel_name"];
-//   cfg_.right_wheel_name = info_.hardware_parameters["right_wheel_name"];
-//   cfg_.loop_rate = std::stof(info_.hardware_parameters["loop_rate"]);
-//   cfg_.device = info_.hardware_parameters["device"];
-//   cfg_.baud_rate = std::stoi(info_.hardware_parameters["baud_rate"]);
-//   cfg_.timeout = std::stoi(info_.hardware_parameters["timeout"]);
-//   cfg_.wheel_separation = std::stod(info_.hardware_parameters["wheel_separation"]);
-
-  // Read unified PID parameters
-  double kp = std::stod(info_.hardware_parameters["pid_kp"]);
-  double ki = std::stod(info_.hardware_parameters["pid_ki"]);
-  double kd = std::stod(info_.hardware_parameters["pid_kd"]);
-
-  // Initialize PID controllers with unified values
-  pid_left_ = PID(kp, ki, kd);
-  pid_right_ = PID(kp, ki, kd);
-
-  // Set up the wheels
-  l_wheel_.setup(cfg_.left_wheel_name);
-  r_wheel_.setup(cfg_.right_wheel_name);
-
-  // Set up the Arduino
-  arduino_.setup(cfg_.device, cfg_.baud_rate, cfg_.timeout);
-
-  // Create a persistent node for callbacks
-  subscription_node_ = rclcpp::Node::make_shared("diffdrive_arduino_interface");
-
-  // Configure callbacks using the persistent node
-  configureOdometryCallback();
-  configureImuCallback();
-
-  RCLCPP_INFO(logger_, "Finished Configuration");
-
-  status_ = hardware_interface::status::CONFIGURED;
-  return return_type::OK;
-}
-
-std::vector<hardware_interface::StateInterface> DiffDriveArduino::export_state_interfaces() {
-  // We need to set up a velocity interface for each wheel
-
-  std::vector<hardware_interface::StateInterface> state_interfaces;
-
-  state_interfaces.emplace_back(hardware_interface::StateInterface(l_wheel_.name, hardware_interface::HW_IF_VELOCITY, &l_wheel_.vel));
-  state_interfaces.emplace_back(hardware_interface::StateInterface(l_wheel_.name, hardware_interface::HW_IF_POSITION, &l_wheel_.pos));
-  state_interfaces.emplace_back(hardware_interface::StateInterface(r_wheel_.name, hardware_interface::HW_IF_VELOCITY, &r_wheel_.vel));
-  state_interfaces.emplace_back(hardware_interface::StateInterface(r_wheel_.name, hardware_interface::HW_IF_POSITION, &r_wheel_.pos));
-  state_interfaces.emplace_back(hardware_interface::StateInterface("gripper_joint", hardware_interface::HW_IF_POSITION, &gripper_position_));
-  return state_interfaces;
-}
-
-std::vector<hardware_interface::CommandInterface> DiffDriveArduino::export_command_interfaces() {
-  // We need to set up a velocity command interface for each wheel
-
-  std::vector<hardware_interface::CommandInterface> command_interfaces;
-
-  command_interfaces.emplace_back(hardware_interface::CommandInterface(l_wheel_.name, hardware_interface::HW_IF_VELOCITY, &l_wheel_.cmd));
-  command_interfaces.emplace_back(hardware_interface::CommandInterface(r_wheel_.name, hardware_interface::HW_IF_VELOCITY, &r_wheel_.cmd));
-  command_interfaces.emplace_back(hardware_interface::CommandInterface("gripper_joint", hardware_interface::HW_IF_POSITION, &gripper_position_));
-  // command_interfaces.emplace_back(hardware_interface::CommandInterface("actuator", "actuator", &actuator_position_));
-  return command_interfaces;
-}
-
-
-return_type DiffDriveArduino::start() {
-  RCLCPP_INFO(logger_, "Starting Controller...");
-
-  arduino_.sendEmptyMsg();
-
-  status_ = hardware_interface::status::STARTED;
-
-  return return_type::OK;
-}
-
-return_type DiffDriveArduino::stop() {
-  RCLCPP_INFO(logger_, "Stopping Controller...");
-  arduino_.disconnect();
-  status_ = hardware_interface::status::STOPPED;
-
-  return return_type::OK;
-}
-
-hardware_interface::return_type DiffDriveArduino::read() {
-  // std::lock_guard<std::mutex> odom_lock(odom_mutex_);
-  // std::lock_guard<std::mutex> imu_lock(imu_mutex_);
-
-  // // Merge odometry and IMU velocities
-  // l_wheel_.vel = odom_l_wheel_vel_ + imu_l_wheel_vel_;
-  // r_wheel_.vel = odom_r_wheel_vel_ + imu_r_wheel_vel_;
-  // RCLCPP_INFO(logger_, "I read");
-
-  return return_type::OK;
-}
-
-hardware_interface::return_type DiffDriveArduino::write() {
-  if (!arduino_.connected()) {
-    return return_type::ERROR;
-  }
-
-  // Spin the persistent node to process incoming callbacks
-  rclcpp::spin_some(subscription_node_);
-
-  {
-    std::lock_guard<std::mutex> odom_lock(odom_mutex_);
-    std::lock_guard<std::mutex> imu_lock(imu_mutex_);
-
-    // Merge odometry and IMU velocities by weighted average
-    l_wheel_.vel = (2.0*odom_l_wheel_vel_ + imu_l_wheel_vel_) / 3.0;
-    r_wheel_.vel = (2.0*odom_r_wheel_vel_ + imu_r_wheel_vel_) / 3.0;
-    RCLCPP_INFO(logger_, "I read %f,  %f", l_wheel_.vel, r_wheel_.vel);
-  }
-
-  // Apply PID control to calculate motor commands
-  double left_command = pid_left_.compute(l_wheel_.cmd, l_wheel_.vel);
-  double right_command = pid_right_.compute(r_wheel_.cmd, r_wheel_.vel);
-
-  // Send motor commands
-  arduino_.setMotorValues(left_command, right_command);
-  RCLCPP_INFO(rclcpp::get_logger("ArduinoComms"), "Wanting motor command: %f %f", l_wheel_.cmd, r_wheel_.cmd);
-
-  // Send gripper command only if gripper_position_ is valid
-  if (gripper_position_ >= 0.0 && gripper_position_ <= 1.0) {
-    arduino_.setGripperState(gripper_position_);
-  } else {
-    RCLCPP_WARN(logger_, "Invalid gripper position: %f", gripper_position_);
-  }
-
-  return return_type::OK;
-}
-
-// PID Controller Implementation
-double PID::compute(double target, double current) {
-  const int PWM_NEUTRAL = 1500;
-  const int PWM_MIN = 1000;
-  const int PWM_MAX = 2000;
-
-  // Compute PID terms
-  double error = target - current;
-  integral_ += error;
-  double derivative = error - previous_error_;
-  previous_error_ = error;
-
-  // Compute raw PID output
-  double raw_output = kp_ * error + ki_ * integral_ + kd_ * derivative;
-
-  // Map raw PID output to PWM range
-  double scaled_output = PWM_NEUTRAL + raw_output;
-  return std::max(PWM_MIN, std::min(PWM_MAX, int(scaled_output))); // Clamp to valid range
-}
-
-#include "pluginlib/class_list_macros.hpp"
-
-PLUGINLIB_EXPORT_CLASS(
-  DiffDriveArduino,
-  hardware_interface::SystemInterface
-)

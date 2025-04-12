@@ -1,12 +1,12 @@
-#include "diffdrive_arduino/arduino_comms.h"
+#include "diffdrive_arduino/arduino_comms.hpp"
 #include <rclcpp/rclcpp.hpp>
 #include <sstream>
 #include <cstdlib>
 #include <libserial/SerialPort.h>
 #include <iostream>
-#include <filesystem>  // new include
+#include <experimental/filesystem>  // Use experimental filesystem for C++14
 
-namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;
 
 // Helper function to find the device port based on device_identifier
 static std::string find_device_port(const std::string &device_identifier) {
@@ -76,9 +76,9 @@ void ArduinoComms::setMotorValues(long pwm_left, long pwm_right) {
     RCLCPP_INFO(rclcpp::get_logger("ArduinoComms"), "Sending motor command: %s", ss.str().c_str());
 }
 
-void ArduinoComms::setGripperState(double position) {
+void ArduinoComms::setGripperState(int8_t position) {
     std::stringstream ss;
-    if (position > 0.1) {   // Close gripper
+    if (position >= 1) {   // Close gripper
       ss << "f 1";
     } else {
       ss << "f 0";
