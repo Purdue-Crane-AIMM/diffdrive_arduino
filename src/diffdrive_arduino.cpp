@@ -57,13 +57,13 @@ return_type DiffDriveArduino::configure(const hardware_interface::HardwareInfo &
 
   time_ = std::chrono::system_clock::now();
 
-  cfg_.left_wheel_name = info_.hardware_parameters["left_wheel_name"];
-  cfg_.right_wheel_name = info_.hardware_parameters["right_wheel_name"];
-  cfg_.loop_rate = std::stof(info_.hardware_parameters["loop_rate"]);
-  cfg_.device = info_.hardware_parameters["device"];
-  cfg_.baud_rate = std::stoi(info_.hardware_parameters["baud_rate"]);
-  cfg_.timeout = std::stoi(info_.hardware_parameters["timeout"]);
-  cfg_.wheel_separation = std::stod(info_.hardware_parameters["wheel_separation"]);
+//   cfg_.left_wheel_name = info_.hardware_parameters["left_wheel_name"];
+//   cfg_.right_wheel_name = info_.hardware_parameters["right_wheel_name"];
+//   cfg_.loop_rate = std::stof(info_.hardware_parameters["loop_rate"]);
+//   cfg_.device = info_.hardware_parameters["device"];
+//   cfg_.baud_rate = std::stoi(info_.hardware_parameters["baud_rate"]);
+//   cfg_.timeout = std::stoi(info_.hardware_parameters["timeout"]);
+//   cfg_.wheel_separation = std::stod(info_.hardware_parameters["wheel_separation"]);
 
   // Read unified PID parameters
   double kp = std::stod(info_.hardware_parameters["pid_kp"]);

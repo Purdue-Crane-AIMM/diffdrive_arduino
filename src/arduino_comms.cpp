@@ -1,10 +1,28 @@
 #include "diffdrive_arduino/arduino_comms.h"
-// #include <ros/console.h>
 #include <rclcpp/rclcpp.hpp>
 #include <sstream>
 #include <cstdlib>
 #include <libserial/SerialPort.h>
 #include <iostream>
+#include <filesystem>  // new include
+
+namespace fs = std::filesystem;
+
+// Helper function to find the device port based on device_identifier
+static std::string find_device_port(const std::string &device_identifier) {
+  fs::path serialPath("/dev/serial/by-id");
+  if (!fs::exists(serialPath)) {
+    throw std::runtime_error("/dev/serial/by-id does not exist");
+  }
+  for (const auto &entry : fs::directory_iterator(serialPath)) {
+    std::string filename = entry.path().filename().string();
+    // Modified to search for idVendor 0x2341 in the filename
+    if (filename.find(device_identifier) != std::string::npos) {
+      return fs::canonical(entry.path()).string();
+    }
+  }
+  throw std::runtime_error("Device with identifier " + device_identifier + " not found.");
+}
 
 LibSerial::BaudRate convert_baud_rate(int baud_rate)
 {
@@ -30,7 +48,15 @@ LibSerial::BaudRate convert_baud_rate(int baud_rate)
 void ArduinoComms::setup(const std::string &serial_device, int32_t baud_rate, int32_t timeout_ms)
 {  
     timeout_ms_ = timeout_ms;
-    serial_conn_.Open(serial_device);
+    std::string port;
+    try {
+      port = find_device_port("Arduino");
+    } catch (const std::exception &e) {
+      std::cerr << "Error: " << e.what() 
+                << "\nFalling back to provided device string." << std::endl;
+      port = serial_device;
+    }
+    serial_conn_.Open(port);
     serial_conn_.SetBaudRate(convert_baud_rate(baud_rate));
 }
 

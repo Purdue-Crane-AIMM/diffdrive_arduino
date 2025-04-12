@@ -6,10 +6,7 @@
 
 class ArduinoComms
 {
-
-
 public:
-
   ArduinoComms()
   {  }
 
