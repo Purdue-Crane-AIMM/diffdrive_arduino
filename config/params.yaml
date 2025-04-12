@@ -1,12 +1,8 @@
 diffdrive_arduino_node:
   ros__parameters:
-    use_pid: true
-    turn_gain: 0.8
+    wheel_base: 1.5
 
-    left_wheel.kp: 2.0
-    left_wheel.ki: 0.1
-    left_wheel.kd: 0.01
-
-    right_wheel.kp: 2.0
-    right_wheel.ki: 0.1
-    right_wheel.kd: 0.01
+    use_pid: false
+    kp: 2.0
+    ki: 0.1
+    kd: 0.01

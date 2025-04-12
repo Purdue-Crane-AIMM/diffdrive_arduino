@@ -4,28 +4,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "diffdrive_arduino/wheel.hpp"
 #include "diffdrive_arduino/arduino_comms.hpp"
-#include <experimental/filesystem>  // Use experimental filesystem for C++14
 #include <regex>
-
-namespace fs = std::experimental::filesystem;
-
-std::string find_arduino_device()
-{
-    std::string device_path = "/dev/ttyUSB0";  // fallback
-    std::string dir = "/dev/serial/by-id/";
-    std::regex arduino_regex("arduino", std::regex::icase);
-
-    for (const auto &entry : fs::directory_iterator(dir))
-    {
-        std::string path = entry.path();
-        if (std::regex_search(path, arduino_regex))
-        {
-            device_path = path;
-            break;
-        }
-    }
-    return device_path;
-}
 
 namespace diffdrive_arduino
 {
@@ -36,35 +15,27 @@ public:
     DiffDriveArduinoNode() : Node("diffdrive_arduino_node"),
                              left_wheel_("left"),
                              right_wheel_("right"),
-                             comms_(find_arduino_device(), 57600, 90),
+                             comms_("/dev/ttyUSB0", 57600, 100),
                              target_linear_(0.0),
                              target_angular_(0.0),
                              have_odom_(false),
                              wheel_base_(1.5)  // default wheel separation in meters
     {
-        declare_parameter("turn_gain", 0.5);
-        declare_parameter("use_pid", true);
-        declare_parameter("left_wheel.kp", 1.0);
-        declare_parameter("left_wheel.ki", 0.0);
-        declare_parameter("left_wheel.kd", 0.0);
-        declare_parameter("right_wheel.kp", 1.0);
-        declare_parameter("right_wheel.ki", 0.0);
-        declare_parameter("right_wheel.kd", 0.0);
+        declare_parameter("use_pid", false);
+        declare_parameter("kp", 1.0);
+        declare_parameter("ki", 0.0);
+        declare_parameter("kd", 0.0);
         declare_parameter("wheel_base", wheel_base_);
 
         get_parameter("use_pid", use_pid_);
         get_parameter("wheel_base", wheel_base_);
+        double kp, ki, kd;
+        get_parameter("kp", kp);
+        get_parameter("ki", ki);
+        get_parameter("kd", kd);
 
-        double l_kp, l_ki, l_kd, r_kp, r_ki, r_kd;
-        get_parameter("left_wheel.kp", l_kp);
-        get_parameter("left_wheel.ki", l_ki);
-        get_parameter("left_wheel.kd", l_kd);
-        get_parameter("right_wheel.kp", r_kp);
-        get_parameter("right_wheel.ki", r_ki);
-        get_parameter("right_wheel.kd", r_kd);
-
-        left_wheel_.set_pid_gains(l_kp, l_ki, l_kd);
-        right_wheel_.set_pid_gains(r_kp, r_ki, r_kd);
+        left_wheel_.set_pid_gains(kp, ki, kd);
+        right_wheel_.set_pid_gains(kp, ki, kd);
 
         // Subscribe to velocity command topic.
         cmd_vel_sub_ = create_subscription<geometry_msgs::msg::Twist>(
@@ -75,14 +46,14 @@ public:
             "/gripper/command", 10, std::bind(&DiffDriveArduinoNode::gripperCallback, this, std::placeholders::_1));
 
         // If using PID, subscribe to an odometry topic for real state feedback.
-        if (use_pid_)
-        {
+        if (use_pid_) {
             odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
                 "/odom", 10, std::bind(&DiffDriveArduinoNode::odomCallback, this, std::placeholders::_1));
         }
 
-        control_timer_ = create_wall_timer(std::chrono::milliseconds(100),
+        control_timer_ = create_wall_timer(std::chrono::milliseconds(200),
                                              std::bind(&DiffDriveArduinoNode::controlLoop, this));
+
     }
 
 private:
@@ -107,7 +78,7 @@ private:
 
     int velocityToMotorCommand(double velocity)
     {
-        const double max_velocity = 1.0;
+        const double max_velocity = 2.0;
         const double min_velocity = 0.01;
 
         if (velocity > max_velocity)
@@ -122,13 +93,13 @@ private:
         int motor_cmd = 1500; // neutral command.
         if (velocity > min_velocity)
         {
-            double scale = (2000 - 1650) / max_velocity;
-            motor_cmd = static_cast<int>(1650 + velocity * scale);
+            double scale = (2000 - 1600) / max_velocity;
+            motor_cmd = static_cast<int>(1600 + velocity * scale);
         }
         else if (velocity < -min_velocity)
         {
-            double scale = (1350 - 1000) / max_velocity;
-            motor_cmd = static_cast<int>(1350 + velocity * scale);
+            double scale = (1400 - 1000) / max_velocity;
+            motor_cmd = static_cast<int>(1400 + velocity * scale);
         }
         return motor_cmd;
     }
