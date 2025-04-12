@@ -46,13 +46,44 @@ ament_target_dependencies(
 target_link_libraries(diffdrive_arduino PUBLIC serial)
 target_compile_definitions(${PROJECT_NAME} PRIVATE "DIFFDRIVE_ARDUINO_BUILDING_DLL")
 
-
-install(TARGETS diffdrive_arduino
-  EXPORT export_diffdrive_arduino
-  DESTINATION lib/${PROJECT_NAME})
-
 install(DIRECTORY launch config include 
   DESTINATION share/${PROJECT_NAME}/
 )
 
+install(TARGETS diffdrive_arduino
+  EXPORT export_diffdrive_arduino
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+ament_export_targets(export_diffdrive_arduino HAS_LIBRARY_TARGET)
+ament_export_dependencies(
+  rclcpp
+  geometry_msgs
+  std_msgs
+  nav_msgs
+  sensor_msgs
+  pluginlib
+)
 ament_package()
+
+
+
+add_executable(diffdrive_arduino_node src/diffdrive_arduino.cpp)
+target_link_libraries(diffdrive_arduino_node PUBLIC
+  diffdrive_arduino  # link against your shared lib
+)
+
+ament_target_dependencies(diffdrive_arduino_node PUBLIC
+  rclcpp
+  geometry_msgs
+  std_msgs
+  nav_msgs
+  sensor_msgs
+  pluginlib
+)
+
+install(TARGETS
+  diffdrive_arduino_node 
+  DESTINATION lib/${PROJECT_NAME}
+)
