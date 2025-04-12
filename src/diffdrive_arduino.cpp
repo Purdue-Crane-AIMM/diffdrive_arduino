@@ -68,7 +68,7 @@ public:
 
         // Subscribe to velocity command topic.
         cmd_vel_sub_ = create_subscription<geometry_msgs::msg::Twist>(
-            "/cmd/vel", 10, std::bind(&DiffDriveArduinoNode::cmdVelCallback, this, std::placeholders::_1));
+            "/cmd_vel_out", 10, std::bind(&DiffDriveArduinoNode::cmdVelCallback, this, std::placeholders::_1));
 
         // Subscribe to gripper commands.
         gripper_sub_ = create_subscription<std_msgs::msg::Int8>(
